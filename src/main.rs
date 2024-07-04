@@ -13,7 +13,7 @@ use std::process::Command;
 use serde_json::Value;
 use std::collections::HashSet;
 
-async fn get_vt_report(api_key: &str, file_hash: &str) -> Result<serde_json::Value, reqwest::Error> {
+async fn get_vt_report(api_key: &str, file_hash: &str) -> Result<Value, reqwest::Error> {
     let url = format!("https://www.virustotal.com/api/v3/files/{}", file_hash);
     let client = Client::new();
     
@@ -25,6 +25,27 @@ async fn get_vt_report(api_key: &str, file_hash: &str) -> Result<serde_json::Val
     
     let report = response.json().await?;
     Ok(report)
+}
+
+fn summarize_vt_report(report: &Value) {
+    if let Some(data) = report.get("data") {
+        if let Some(attributes) = data.get("attributes") {
+            if let Some(last_analysis_stats) = attributes.get("last_analysis_stats") {
+                println!("Analysis Stats:");
+                println!("  Harmless: {}", last_analysis_stats["harmless"]);
+                println!("  Malicious: {}", last_analysis_stats["malicious"]);
+                println!("  Suspicious: {}", last_analysis_stats["suspicious"]);
+                println!("  Undetected: {}", last_analysis_stats["undetected"]);
+            }
+
+            if let Some(last_analysis_results) = attributes.get("last_analysis_results") {
+                println!("\nDetailed Results:");
+                for (engine, result) in last_analysis_results.as_object().unwrap() {
+                    println!("  {}: {}", engine, result["category"]);
+                }
+            }
+        }
+    }
 }
 
 fn calculate_hash(file_path: &str) -> std::io::Result<(String, String, String)> {
@@ -107,7 +128,10 @@ async fn main() {
 
                             for file_hash in [&md5, &sha1, &sha256] {
                                 match get_vt_report(&cli.api_key, file_hash).await {
-                                    Ok(report) => println!("VirusTotal Report for Hash ({}):\n{:#?}", file_hash, report),
+                                    Ok(report) => {
+                                        println!("VirusTotal Report for Hash ({}):", file_hash);
+                                        summarize_vt_report(&report);
+                                    },
                                     Err(e) => eprintln!("Failed to retrieve report from VirusTotal for hash {}: {:?}", file_hash, e),
                                 }
                             }
